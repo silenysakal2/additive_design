@@ -3,9 +3,23 @@
 #include <cstdint>
 #include <cmath>
 #include <cstring>
+
+
+#if defined(__linux__) || defined(__APPLE__)
 #include <unistd.h>
+#endif
 
 
+#ifdef _WIN32
+#include <cstdlib>  // For malloc/free
+#endif
+
+
+#ifdef _WIN32
+#define DLL_EXPORT extern "C" __declspec(dllexport)
+#else
+#define DLL_EXPORT extern "C"
+#endif
 
 double pow(double base, int exponent)
 {
@@ -27,7 +41,7 @@ struct MaxproComputeStackUnit
 	long long int maxpro; // A product till this point in the stack; not the inverted value (as I'm hoping for integer arithmetics to be slightly faster). Also, it's not squared yet.
 };
 
-extern "C" int *maxpro_design_meshgrid(int nv, int ns, int seed, bool periodic, bool rand_ini, bool rand_sel)
+DLL_EXPORT int *maxpro_design_meshgrid(int nv, int ns, int seed, bool periodic, bool rand_ini, bool rand_sel)
 {
 	int *ns_powers = (int*) malloc((nv+1) * sizeof(int)); // Bake these for later
 	ns_powers[0] = 1;
@@ -136,7 +150,7 @@ extern "C" int *maxpro_design_meshgrid(int nv, int ns, int seed, bool periodic, 
 }
 
 
-extern "C" void gen_design_candidates(char crit, int nv, int ns, long long int candidate_count, double *candidates, int seed, bool periodic, bool rand_sel)
+DLL_EXPORT void gen_design_candidates(char crit, int nv, int ns, long long int candidate_count, double *candidates, int seed, bool periodic, bool rand_sel)
 {
 	srand(seed);
 
