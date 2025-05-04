@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# coding: utf-8
 import sys
 import numpy as np
 import os
@@ -9,15 +7,27 @@ def latinize(d):
     order = np.argsort(d,axis=0)
     ranks = np.argsort(order,axis=0)
     return (ranks + 0.5) / nsim
+
+def get_detas(d, periodic):
+    '''
+    computes a 3-dim matrix of ccordinnate deltas for all pairs of points in 'd'
+    ns x ns x nv matrix
+    '''
+    deltas = np.abs(d[:, np.newaxis, :] - d[np.newaxis, :, :]) # ns x ns x nv matrix of abs coordinate differences
+    if periodic:
+        deltas = np.minimum(deltas, 1 - deltas)
+    return deltas
+
+
     
-# *** PERIODIC DISCREPANCY ***
+# *** PERIODIC WRAP-AROUND DISCREPANCY ***
 def wd2(d):
     ns, nv = d.shape
-    b = np.abs(np.expand_dims(d, axis=1) - np.expand_dims(d, axis=0))
-    b = np.prod(3/2 - b * (1-b), axis=2)
+    deltas = get_detas(d, periodic=False) #ns x ns x nv matrix of abs coordinate differences
+    b = np.prod(3/2 - deltas * (1-deltas), axis=2)
     return np.sum(b) / ns ** 2 - (4/3)**nv
 
-# *** Centered L2 DISCREPANCY ***
+# *** CENTERED L2 DISCREPANCY ***
 def cl2(d):    
     ns, nv = d.shape
     # design pre-processing (center shift to zero, shrink to one half)
@@ -33,35 +43,26 @@ def cl2(d):
 
     return (13./12.)**nv  - t2 + t3
 
-# *** (PERIODIC) Maximin CRITERION ***
+# *** (PERIODIC) MAXIMIN CRITERION ***
 def Mm(d, periodic=True):
     nv = d.shape[1]
-    b = np.abs(np.expand_dims(d, axis=1) - np.expand_dims(d, axis=0))
-    if(periodic):
-        b_ = 1-b
-        mx = b > b_    # mark entries, where the box length projection is greater than the periodic one (will be replaced)
-        b[mx] = b_[mx] # select minimum distances from two possibilities in each entry
-    b = (np.sum(b**2, axis=2)**(1/2)) # squared periodic distance for each point pair
-    np.fill_diagonal(b, nv)   # replace zero distances on the main diagonal with 'nv's (not to be selected as minimum)
-    return np.min(b)   # return minimum distance
+    deltas = get_detas(d, periodic) #ns x ns x nv matrix of abs coordinate differences
+    L = (np.sum(deltas ** 2, axis=2) ** (1/2)) # squared periodic distance for each point pair (ns x ns matrix)
+    np.fill_diagonal(L, nv)   # replace zero distances on the main diagonal with nv's (not to be selected as minimum)
+    return np.min(L)   # return minimum distance
 
 # *** (PERIODIC) PHI CRITERION ***
 def phip(d, periodic=True):
-    ns, n = d.shape
-    p = n+1 #exponent of distances
-    b = np.abs(np.expand_dims(d, axis=1) - np.expand_dims(d, axis=0))
-    if(periodic):
-        b_ = 1-b
-        mx = b > b_    # mark entries, where the box length projection is greater than the periodic one (will be replaced)
-        b[mx] = b_[mx] # select minimum distances from two possibilities in each entry
-    b = np.sum(b**2, axis=2)**(p/2) # squared periodic distance for each point pair
-    np.fill_diagonal(b, 1)          # replace zero distances on the main diagonal with ones
-    b = 1 / b
-    return (np.sum(b) - ns) / (ns ** 2 - ns)  # average of off-diagonal members (subtract the diagonal unit entries)
+    ns, nv = d.shape
+    p = nv +1 #exponent of distances
+    deltas = get_detas(d, periodic) #ns x ns x nv matrix of abs coordinate differences
+    L = np.sum(deltas ** 2, axis=2) ** (p/2) # squared periodic distance for each point pair
+    np.fill_diagonal(L, 1) # replace zero distances on the main diagonal with ones
+    return (np.sum(1 / L) - ns) / (ns ** 2 - ns)  # average of off-diagonal members (subtract the diagonal unit entries)
 
-def maxPro(x: np.ndarray, periodic = False) -> float:  # single loop
+def maxPro(d: np.ndarray, periodic = False) -> float:  # single loop
     """
-    Compute the (u)MaxPro criterion for a given design matrix.
+    Compute the (u)MaxPro criterion for a given design.
 
     This function calculates the MaxPro or uMaxPro criterion for a given 2D design matrix `x`.
     The MaxPro criterion is used in experimental design to ensure good space-filling properties.
@@ -85,17 +86,16 @@ def maxPro(x: np.ndarray, periodic = False) -> float:  # single loop
         - The uMaxPro variant uses periodic distance calculations.
     """
 
-    ns, nv = x.shape
+    ns, nv = d.shape
 
     maxpro = 0  # Initialize the criterion accumulator
 
     # Iterate over each design point
     for i in range(ns):
         # Compute the absolute differences between point i and all previous points
-        deltas = np.abs(x[i, :] - x[0:i, :])
+        deltas = np.abs(d[i, :] - d[0:i, :])
 
-        if periodic is True:
-            # Apply periodic boundary conditions by wrapping distances
+        if periodic:
             deltas = np.minimum(deltas, 1 - deltas)
 
         # Square the differences to get squared distances
