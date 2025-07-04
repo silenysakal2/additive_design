@@ -2,5 +2,6 @@
 !.git   # Except the .git folder
 .win_compilation/
 __pycache__/
+.ipynb_checkpoints/
 maxpro.pdb
 __pycache__/design_criteria.cpython-312.pyc
