@@ -3,5 +3,6 @@
 .win_compilation/
 __pycache__/
 .ipynb_checkpoints/
+*.ipynb # Use the py:percent format instead; the .ipynb is now only to contain the outputs to be loaded
 maxpro.pdb
 __pycache__/design_criteria.cpython-312.pyc
