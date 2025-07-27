@@ -6,11 +6,11 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.2
+#       jupytext_version: 1.16.7
 #   kernelspec:
-#     display_name: base
+#     display_name: Python 3 (ipykernel)
 #     language: python
-#     name: base
+#     name: python3
 # ---
 
 # %%
@@ -21,13 +21,16 @@ import matplotlib.pyplot as plt
 import ctypes
 import math
 import random
+import platform
 from tqdm.notebook import trange
 
 # %%
 from design_criteria import wd2, cl2, Mm, phip, maxPro, latinize, evaluate
 
 # %%
-cppfn = ctypes.CDLL("./maxpro.so")
+lib_name = "./maxpro.dll" if platform.system() == "Windows" else "./maxpro.so"
+cppfn = ctypes.CDLL(lib_name)
+
 
 
 cppfn.maxpro_design_meshgrid.argtypes = (
@@ -85,8 +88,8 @@ def gen_design_candidates(crit, nv, ns, seed = None, candidate_count = None, can
 
 
 # %%
-nv = 4
-ns = 16
+nv = 2
+ns = 106
 
 
 # Additive designs
@@ -316,7 +319,7 @@ for pts in range (ns,ns+1):
 
 
 # %%
-nr = 100000
+nr = 1000
 hist = np.zeros([ns] * nv, dtype=int)
 for i in trange(nr):
     des = maxpro_design_meshgrid(nv, ns, seed=i, periodic = periodic, rand_ini = rand_ini, rand_sel = rand_sel)
