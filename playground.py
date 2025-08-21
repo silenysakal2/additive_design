@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.7
+#       jupytext_version: 1.17.2
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -274,11 +274,8 @@ for i, method in enumerate(METHODS):
     ).expandtabs(CELL_WIDTH))
     print((("+" + ("-" * (CELL_WIDTH-1))) * 10) + "+")
 
-# %%
-import matplotlib.pyplot as plt
-import numpy as np
-import math
 
+# %%
 def plot_des(ax, des, name, color='k', alpha=1):
     ax.scatter(des[:, -2], des[:, -1], color=color, alpha=alpha)
     ax.scatter(des[0, -2], des[0, -1], color="red", alpha=alpha)
@@ -460,16 +457,12 @@ def gradientDescent_maxpro(input_des: np.ndarray, steps: np.ndarray = np.pow(1.1
         deltas[deltas < -0.5] += 1
         d_sq = deltas * deltas
         d_cube = (d_sq * deltas)
-        deltas_aranged = d_sq[:, :, :, np.newaxis] + np.zeros([ns])[np.newaxis, np.newaxis, np.newaxis, :] # Add the zeros to reshape (copy the values along the last dimension) (yes, there is no better way to do that)
+        deltas_aranged = d_sq[:, :, :, np.newaxis] + np.zeros([nv])[np.newaxis, np.newaxis, np.newaxis, :] # Add the zeros to reshape (copy the values along the last dimension) (yes, there is no better way to do that)
         deltas_aranged[:, :, np.arange(nv), np.arange(nv)] = d_cube
         deltas_aranged[np.arange(ns), np.arange(ns), :, :] = np.inf # It will be divided by, they should be zeroed
-        #print(deltas_aranged)
         derivatives = np.sum(1 / np.prod(deltas_aranged, axis = 3), axis = 1) # NOTE: They are halved and negated (for efficiency)
-        #print(derivatives)
         derivatives *= 1 / np.max(np.abs(derivatives)) # They kept overflowing the float64 max, that's why they're getting divided twice
         max_derivative = np.sqrt(np.max(np.sum(derivatives * derivatives, axis = 1)))
-        #print("Max derivative:", max_derivative)
-        #print("Avg derivative:", np.sum(derivatives) / (ns * nv))
         design += derivatives * (step_size / max_derivative)
         design[design < 0] += 1 # Periodize
         design[design > 1] -= 1
@@ -481,16 +474,28 @@ def gradientDescent_maxpro(input_des: np.ndarray, steps: np.ndarray = np.pow(1.1
 np.sum(np.pow(1.005, -np.arange(256)) * 0.001), np.pow(1.005, -np.arange(256)) * 0.001
 
 # %%
-my_design = designs["as_maximin"].points
+my_design = designs["as_maxpro"].points
 
 # %%
-steps = np.pow(1.005, -np.arange(16)) * 0.005
+step_count = 64
+step_min_relative = 1e-6 # This is basically the precision
+steps = np.pow(step_min_relative ** (1 / step_count), np.arange(step_count)) * (0.25 / ns)
+print("Next step factor (should be over 0.5):", (step_min_relative ** (1 / step_count)))
+
+# %%
+steps
+
+# %%
+ns
+
+# %%
+(1/106) ** 2
 
 # %%
 my_design2 = gradientDescent_maxpro(my_design, steps, True)
 
 # %%
-my_design2 = my_design
+#my_design2 = my_design
 
 # %%
 fig, ax = plt.subplots(figsize=(8, 8))
@@ -498,16 +503,13 @@ fig, ax = plt.subplots(figsize=(8, 8))
 ax.scatter(my_design[:, 0],  my_design[:, 1],  c = "r", alpha = 0.5)
 ax.scatter(my_design2[:, 0], my_design2[:, 1], c = "g")
 
-my_design2 = gradientDescent_maxpro(my_design2, np.array([0.001] * 16), True)
 min_diff = 1
 for v in range(nv):
     sorted = np.sort(my_design2[:, v])
     diff = np.min(np.abs(sorted - np.roll(sorted, 1))) # It's the local minimum, even though min is not in the name, not to be confused
     if min_diff > diff:
         min_diff = diff
-print("Min diff:", min_diff)
-
-# %%
+#print("Min diff:", min_diff)
 
 # %%
 
