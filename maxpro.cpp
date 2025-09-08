@@ -16,9 +16,9 @@
 
 
 #ifdef _WIN32
-#define DLL_EXPORT extern "C" __declspec(dllexport)
+#define EXTERN_C extern "C" __declspec(dllexport)
 #else
-#define DLL_EXPORT extern "C"
+#define EXTERN_C extern "C"
 #endif
 
 double pow(double base, int exponent)
@@ -41,7 +41,7 @@ struct MaxproComputeStackUnit
 	long long int maxpro; // A product till this point in the stack; not the inverted value (as I'm hoping for integer arithmetics to be slightly faster). Also, it's not squared yet.
 };
 
-DLL_EXPORT int *maxpro_design_meshgrid(int nv, int ns, int seed, bool periodic, bool rand_ini, bool rand_sel)
+EXTERN_C int *maxpro_design_meshgrid(int nv, int ns, int seed, bool periodic, bool rand_ini, bool rand_sel)
 {
 	int *ns_powers = (int*) malloc((nv+1) * sizeof(int)); // Bake these for later
 	ns_powers[0] = 1;
@@ -51,40 +51,32 @@ DLL_EXPORT int *maxpro_design_meshgrid(int nv, int ns, int seed, bool periodic, 
 	double *newpoint_deltas = (double*) malloc(ns_powers[nv] * sizeof(double));
 	for(long long int i = 0; i < ns_powers[nv]; i++) newpoint_deltas[i] = 0;
 
-	int *picked_points_org = (int*) malloc(ns * nv * sizeof(int)); // An array of picked points; in order they were picked. This array is only ever written to, except for the final print.
-	int **picked_points = (int**) malloc(ns * sizeof(int*));
-	for(int s = 0; s < ns; s++)
-		picked_points[s] = picked_points_org + (s*nv);
+	int *picked_points = (int*) malloc(ns * nv * sizeof(int*));
 
 	srand(seed);
 	if(rand_ini)
 		for(int v = 0; v < nv; v++)
-			picked_points[0][v] = rand() % ns; // As that while loop requires a previous point being picked
+			picked_points[0 * nv + v] = rand() % ns; // As that while loop requires a previous point being picked
 	else
 		for(int v = 0; v < nv; v++)
-			picked_points[0][v] = 0; // As that while loop requires a previous point being picked
+			picked_points[0 * nv + v] = 0; // As that while loop requires a previous point being picked
 	
-	int *candidates_coords_org = (int*) malloc(nv * ns * sizeof(int)); // Stores available coords for new points; there's technically a bit more memory than needed, but I don't care
-	int **candidates_coords = (int**) malloc((nv+1) * sizeof(int*));
-	for(int v = 0; v < nv; v++) {
-		candidates_coords[v] = candidates_coords_org + (v*ns);
+	int *candidates_coords = (int*) malloc((nv+1) * ns * sizeof(int)); // Stores available coords for new points; there's technically a bit more memory than needed (for the first point picked), and there's a whole ns-long segment at the end to not cause a segmentation fault on stop condition (a lazy solution), but I don't care.
+	for(int v = 0; v < nv; v++)
 		for(int s = 0; s < ns; s++)
-			candidates_coords[v][s] = s + (s >= picked_points[0][v] ? 1 : 0);
-	}
-	candidates_coords[nv] = candidates_coords_org; // The last one just has to point to valid memory as it will be used for the additional element of the stack (for stop condition)
+			candidates_coords[v * ns + s] = s + (s >= picked_points[0 * nv + v] ? 1 : 0);
 
 	MaxproComputeStackUnit *maxpro_compute_stack = (MaxproComputeStackUnit*) malloc((nv+1) * sizeof(MaxproComputeStackUnit)); // One more for easier stop condition
 	for(int picked_point_count = 1; picked_point_count < ns-1; picked_point_count++) { // The last point will simply go to the remaining coords (thats why ns-1; the stack incrementation as it is -- the most optimized I could think of -- crashes otherwise)
-		//std::cout << "\n\n--New point--\n";
-		int *last_point = picked_points[picked_point_count-1];
-		int *next_point = picked_points[picked_point_count]; // First, it'll hold indices to candidates_coords, then, they'll be replaced with the actual coords
+		int *last_point = picked_points + ((picked_point_count-1) * nv);
+		int *next_point = picked_points + (picked_point_count * nv); // First, it'll hold indices to candidates_coords, then, they'll be replaced with the actual coords
 
 		maxpro_compute_stack[nv] = {0, 0, 1};
 		for(int v = nv-1; v >= 0; v--) {
-			long long int dx = abs(candidates_coords[v][0] - last_point[v]);
+			long long int dx = abs(candidates_coords[v * ns + 0] - last_point[v]);
 			if(periodic && dx > (ns/2)) // Periodic
 				dx = ns - dx;
-			maxpro_compute_stack[v] = {0, candidates_coords[v][0] * ns_powers[v] + maxpro_compute_stack[v+1].i_sum, dx * maxpro_compute_stack[v+1].maxpro};
+			maxpro_compute_stack[v] = {0, candidates_coords[v * ns + 0] * ns_powers[v] + maxpro_compute_stack[v+1].i_sum, dx * maxpro_compute_stack[v+1].maxpro};
 			next_point[v] = 0;
 		}
 		double best_newpoint_delta = std::numeric_limits<double>::infinity();
@@ -110,16 +102,16 @@ DLL_EXPORT int *maxpro_design_meshgrid(int nv, int ns, int seed, bool periodic, 
 			int v;
 			for(v = 0; maxpro_compute_stack[v].coord_i == (ns - picked_point_count - 1); v++); // Find stack increment depth
 			maxpro_compute_stack[v].coord_i++;
-			maxpro_compute_stack[v].i_sum = maxpro_compute_stack[v+1].i_sum + (candidates_coords[v][maxpro_compute_stack[v].coord_i] * ns_powers[v]);
-			long long int dx = abs(last_point[v] - candidates_coords[v][maxpro_compute_stack[v].coord_i]);
+			maxpro_compute_stack[v].i_sum = maxpro_compute_stack[v+1].i_sum + (candidates_coords[v * ns + maxpro_compute_stack[v].coord_i] * ns_powers[v]);
+			long long int dx = abs(last_point[v] - candidates_coords[v * ns + maxpro_compute_stack[v].coord_i]);
 			if(periodic && dx > (ns/2)) // Periodic
 				dx = ns - dx;
 			maxpro_compute_stack[v].maxpro = maxpro_compute_stack[v+1].maxpro * dx;
 			v--;
 			for(; v >= 0; v--) { // Increment the stack
 				maxpro_compute_stack[v].coord_i = 0;
-				maxpro_compute_stack[v].i_sum = maxpro_compute_stack[v+1].i_sum + (candidates_coords[v][maxpro_compute_stack[v].coord_i] * ns_powers[v]);
-				dx = abs(last_point[v] - candidates_coords[v][maxpro_compute_stack[v].coord_i]);
+				maxpro_compute_stack[v].i_sum = maxpro_compute_stack[v+1].i_sum + (candidates_coords[v * ns + maxpro_compute_stack[v].coord_i] * ns_powers[v]);
+				dx = abs(last_point[v] - candidates_coords[v * ns + maxpro_compute_stack[v].coord_i]);
 				if(periodic && dx > (ns/2)) // Periodic
 					dx = ns - dx;
 				maxpro_compute_stack[v].maxpro = maxpro_compute_stack[v+1].maxpro * dx;
@@ -128,29 +120,26 @@ DLL_EXPORT int *maxpro_design_meshgrid(int nv, int ns, int seed, bool periodic, 
 		
 		// Adding the point:
 		for(int v = 0; v < nv; v++) {
-			int *cc = candidates_coords[v];
+			int *cc = candidates_coords + (v * ns);
 			int nextPoint_x = cc[next_point[v]];
 			for(int i = next_point[v]; i < (ns - picked_point_count - 1); i++) // Shift the array rather than swapping the last element for better cache
 				cc[i] = cc[i+1];
 			next_point[v] = nextPoint_x;
 		}
 	}
-	std::cout << std::flush;
 
 	for(int v = 0; v < nv; v++)
-		picked_points[ns-1][v] = candidates_coords[v][0];
+		picked_points[(ns-1) * nv + v] = candidates_coords[v * ns + 0];
 
 	free(ns_powers);
 	free(newpoint_deltas);
-	free(picked_points);
-	free(candidates_coords_org);
 	free(candidates_coords);
 	free(maxpro_compute_stack);
-	return picked_points_org;
+	return picked_points;
 }
 
 
-DLL_EXPORT void gen_design_candidates(char crit, int nv, int ns, long long int candidate_count, double *candidates, int seed, bool periodic, bool rand_sel)
+EXTERN_C void gen_design_candidates(char crit, int nv, int ns, long long int candidate_count, double *candidates, int seed, bool periodic, bool rand_sel)
 {
 	srand(seed);
 
@@ -247,6 +236,9 @@ DLL_EXPORT void gen_design_candidates(char crit, int nv, int ns, long long int c
 
 	return;
 }
+
+
+//EXTERN_C void
 
 
 
