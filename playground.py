@@ -115,7 +115,7 @@ def maxpro_addPoint_semiAnalytical(points: np.ndarray, min_iterations = 2, max_i
 
 
 # %%
-nv = 4
+nv = 10
 ns = 106
 
 
@@ -128,7 +128,7 @@ rand_sel = False
 scramble = False 
 
 # %%
-my_des = np.random.rand(1, nv)
+my_des = np.random.rand(5, nv)
 
 # %%
 my_des = maxpro_addPoint_semiAnalytical(my_des, 1, 1000, 1e-6, True)
@@ -139,16 +139,21 @@ my_des
 # %%
 plt.close("all")
 
-my_des = maxpro_addPoint_semiAnalytical(my_des, 1, 1000, 1e-6, True)
+for _ in range(2):
+    my_des = maxpro_addPoint_semiAnalytical(my_des, 1, 100, 1e-6, True)
 
 fig, ax = plt.subplots(2, 2, figsize=(8, 8))
 ax0 = ax[0][0]
+
 ax0.scatter(my_des[:, 0], my_des[:, 1], c = "k")
 ax0.scatter(my_des[-1, 0], my_des[-1, 1], c = "red")
 ax0.set_xlim(0, 1)
+ax0.set_xticklabels(["" for _ in range(my_des.shape[0])])
 ax0.set_ylim(0, 1)
+ax0.set_yticklabels(["" for _ in range(my_des.shape[0])])
 ax0.set_xticks(my_des[:, 0])
 ax0.set_yticks(my_des[:, 1])
+
 ax1 = ax[1][0]
 ax1.scatter(my_des[:, 1], my_des[:, 2], c = "k")
 ax1.scatter(my_des[-1, 1], my_des[-1, 2], c = "red")
@@ -163,7 +168,11 @@ ax2.set_xlim(0, 1)
 ax2.set_ylim(0, 1)
 ax2.set_xticks(my_des[:, 2])
 ax2.set_yticks(my_des[:, 0])
+
 fig.show()
+
+# %%
+print(f" Nsim = {len(my_des)}" )
 
 # %%
 fig = plt.figure(figsize=(8, 8))
