@@ -7,3 +7,8 @@ build()
 {
 	g++ -shared -fPIC -o maxpro.so maxpro.cpp
 }
+
+bdebug()
+{
+	g++ -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer -shared -fPIC -o maxpro.so maxpro.cpp
+}
