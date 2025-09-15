@@ -28,6 +28,9 @@ from tqdm.notebook import trange
 from design_criteria import wd2, cl2, Mm, phip, maxPro, latinize, evaluate
 
 # %%
+# %matplotlib widget
+
+# %%
 lib_name = "./maxpro.dll" if platform.system() == "Windows" else "./maxpro.so"
 cppfn = ctypes.CDLL(lib_name)
 
@@ -87,8 +90,32 @@ def gen_design_candidates(crit, nv, ns, seed = None, candidate_count = None, can
     return candidates[:ns, :]
 
 
+cppfn.maxpro_addPoint_semiAnalytical.argtypes = (
+    ctypes.c_int, # nv
+    ctypes.c_int, # ns
+    ctypes.POINTER(ctypes.c_double), # points
+    ctypes.c_double, # error_treshold
+    ctypes.c_int, # min_iterations
+    ctypes.c_int, # max_iterations
+    ctypes.c_bool # periodic
+)
+cppfn.maxpro_addPoint_semiAnalytical.restype = ctypes.c_longlong
+
+def maxpro_addPoint_semiAnalytical(points: np.ndarray, min_iterations = 2, max_iterations = 16, error_treshold = 1e-6, periodic = True) -> np.ndarray:
+    global cppfn
+    assert my_des.flags['C_CONTIGUOUS']
+    assert my_des.dtype == np.float64
+    ns, nv = points.shape
+    points2 = np.empty((ns + 1, nv), dtype=np.float64) # There isn't much of a better way to do this than to copy the array
+    assert points2.flags['C_CONTIGUOUS']
+    points2[:ns] = points
+    skipped = cppfn.maxpro_addPoint_semiAnalytical(nv, ns, points2.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), error_treshold, min_iterations, max_iterations, periodic)
+    print("Skipped " + str(skipped) + "/" + str(ns ** nv) + " (" + str(round(skipped / (ns ** nv) * 100)) + " %)")
+    return points2
+
+
 # %%
-nv = 2
+nv = 4
 ns = 106
 
 
@@ -99,6 +126,52 @@ rand_sel = False
 
 # qmc
 scramble = False 
+
+# %%
+my_des = np.random.rand(1, nv)
+
+# %%
+my_des = maxpro_addPoint_semiAnalytical(my_des, 1, 1000, 1e-6, True)
+
+# %%
+my_des
+
+# %%
+plt.close("all")
+
+my_des = maxpro_addPoint_semiAnalytical(my_des, 1, 1000, 1e-6, True)
+
+fig, ax = plt.subplots(2, 2, figsize=(8, 8))
+ax0 = ax[0][0]
+ax0.scatter(my_des[:, 0], my_des[:, 1], c = "k")
+ax0.scatter(my_des[-1, 0], my_des[-1, 1], c = "red")
+ax0.set_xlim(0, 1)
+ax0.set_ylim(0, 1)
+ax0.set_xticks(my_des[:, 0])
+ax0.set_yticks(my_des[:, 1])
+ax1 = ax[1][0]
+ax1.scatter(my_des[:, 1], my_des[:, 2], c = "k")
+ax1.scatter(my_des[-1, 1], my_des[-1, 2], c = "red")
+ax1.set_xlim(0, 1)
+ax1.set_ylim(0, 1)
+ax1.set_xticks(my_des[:, 1])
+ax1.set_yticks(my_des[:, 2])
+ax2 = ax[0][1]
+ax2.scatter(my_des[:, 2], my_des[:, 0], c = "k")
+ax2.scatter(my_des[-1, 2], my_des[-1, 0], c = "red")
+ax2.set_xlim(0, 1)
+ax2.set_ylim(0, 1)
+ax2.set_xticks(my_des[:, 2])
+ax2.set_yticks(my_des[:, 0])
+fig.show()
+
+# %%
+fig = plt.figure(figsize=(8, 8))
+ax = fig.add_subplot(projection="3d")
+ax.scatter(my_des[:, 0], my_des[:, 1], my_des[:, 2])
+ax.set_xlim(0, 1)
+ax.set_ylim(0, 1)
+ax.set_zlim(0, 1)
 
 
 # %%
