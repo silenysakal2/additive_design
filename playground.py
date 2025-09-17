@@ -17,12 +17,21 @@
 import numpy as np
 import scipy
 from scipy.stats import qmc
+import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib import colors
+import matplotlib.cm as cm
+from matplotlib import gridspec
+from itertools import cycle
+
 import ctypes
 import math
 import random
 import platform
 from tqdm.notebook import trange
+
+from plotting import plot_2D_view
+  
 
 # %%
 from design_criteria import wd2, cl2, Mm, phip, maxPro, latinize, evaluate
@@ -110,12 +119,12 @@ def maxpro_addPoint_semiAnalytical(points: np.ndarray, min_iterations = 2, max_i
     assert points2.flags['C_CONTIGUOUS']
     points2[:ns] = points
     skipped = cppfn.maxpro_addPoint_semiAnalytical(nv, ns, points2.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), error_treshold, min_iterations, max_iterations, periodic)
-    print("Skipped " + str(skipped) + "/" + str(ns ** nv) + " (" + str(round(skipped / (ns ** nv) * 100)) + " %)")
+    print("Ns = " + str(ns) +", Skipped " + str(skipped) + "/" + str(ns ** nv) + " (" + str(round(skipped / (ns ** nv) * 100)) + " %)")
     return points2
 
 
 # %%
-nv = 10
+nv = 2
 ns = 106
 
 
@@ -139,38 +148,46 @@ my_des
 # %%
 plt.close("all")
 
-for _ in range(2):
+for _ in range(512):
     my_des = maxpro_addPoint_semiAnalytical(my_des, 1, 100, 1e-6, True)
 
-fig, ax = plt.subplots(2, 2, figsize=(8, 8))
-ax0 = ax[0][0]
 
-ax0.scatter(my_des[:, 0], my_des[:, 1], c = "k")
-ax0.scatter(my_des[-1, 0], my_des[-1, 1], c = "red")
-ax0.set_xlim(0, 1)
-ax0.set_xticklabels(["" for _ in range(my_des.shape[0])])
-ax0.set_ylim(0, 1)
-ax0.set_yticklabels(["" for _ in range(my_des.shape[0])])
-ax0.set_xticks(my_des[:, 0])
-ax0.set_yticks(my_des[:, 1])
+if nv==2:
+    fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+    plot_2D_view(my_des.shape[1], my_des.shape[0], my_des, ax, vars_to_plot=[0, 1])
+else:
 
-ax1 = ax[1][0]
-ax1.scatter(my_des[:, 1], my_des[:, 2], c = "k")
-ax1.scatter(my_des[-1, 1], my_des[-1, 2], c = "red")
-ax1.set_xlim(0, 1)
-ax1.set_ylim(0, 1)
-ax1.set_xticks(my_des[:, 1])
-ax1.set_yticks(my_des[:, 2])
-ax2 = ax[0][1]
-ax2.scatter(my_des[:, 2], my_des[:, 0], c = "k")
-ax2.scatter(my_des[-1, 2], my_des[-1, 0], c = "red")
-ax2.set_xlim(0, 1)
-ax2.set_ylim(0, 1)
-ax2.set_xticks(my_des[:, 2])
-ax2.set_yticks(my_des[:, 0])
+    fig, ax = plt.subplots(2, 2, figsize=(8, 8))
+    ax0 = ax[0][0]
 
-fig.show()
+    ax0.scatter(my_des[:, 0], my_des[:, 1], c = "k")
+    ax0.scatter(my_des[-1, 0], my_des[-1, 1], c = "red")
+    ax0.set_xlim(0, 1)
+    ax0.set_xticklabels(["" for _ in range(my_des.shape[0])])
+    ax0.set_ylim(0, 1)
+    ax0.set_yticklabels(["" for _ in range(my_des.shape[0])])
+    ax0.set_xticks(my_des[:, 0])
+    ax0.set_yticks(my_des[:, 1])
 
+    ax1 = ax[1][0]
+    ax1.scatter(my_des[:, 1], my_des[:, 2], c = "k")
+    ax1.scatter(my_des[-1, 1], my_des[-1, 2], c = "red")
+    ax1.set_xlim(0, 1)
+    ax1.set_ylim(0, 1)
+    ax1.set_xticks(my_des[:, 1])
+    ax1.set_yticks(my_des[:, 2])
+    ax2 = ax[0][1]
+    ax2.scatter(my_des[:, 2], my_des[:, 0], c = "k")
+    ax2.scatter(my_des[-1, 2], my_des[-1, 0], c = "red")
+    ax2.set_xlim(0, 1)
+    ax2.set_ylim(0, 1)
+    ax2.set_xticks(my_des[:, 2])
+    ax2.set_yticks(my_des[:, 0])
+
+    fig.show()
+
+
+    
 # %%
 print(f" Nsim = {len(my_des)}" )
 
