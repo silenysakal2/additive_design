@@ -4,6 +4,26 @@
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+//#include <vector>
+//#include <omp.h> // call omp_set_num_threads()
+
+/*
+
+Build flags
+
+GCC/Clang: -O3 -fopenmp -march=native (optional)
+
+add_compile_options(/O2 /openmp:llvm)  # or /openmp
+
+
+MSVC: /O2 /openmp (or /openmp:llvm on newer MSVC)
+
+*/
+
+
+#if defined(_OPENMP)
+	#include <omp.h>
+#endif
 
 
 #if defined(__linux__) || defined(__APPLE__)
@@ -280,6 +300,227 @@ static inline double maxpro_semiAnalytical_1DAreaMaxMul(int nv, int ns, int v, i
 	}
 	return max_mul;
 }
+
+/*
+   This function splits the unit hypercube into areas: along each axis, they are divided by the points' coordinates. Inside each of these areas, it iteratively finds the best next point, and then it adds it to the end of the `points` array. `ns` represents number of points BEFORE calling this function.
+
+   It is already optimized: there is a way to, for any rectangular area, calculate the minimum maxpro. In this function however, that strategy is only employed to eliminate areas right away, not to make a tree. For a better function (it may not always be faster), look for the word "tree".
+*/
+
+/*
+EXTERN_C long long int maxpro_addPoint_semiAnalytical_Par(
+	int nv, int ns, double* points,
+	double error_treshold, int min_iterations, int max_iterations, bool periodic)
+{
+	if (ns == 1) { // The counter breaks if set to 1
+		for (int v = 0; v < nv; v++) {
+			points[nv + v] = points[v] + 0.5;
+			if (points[v + nv] > 1.) points[v + nv] -= 1.;
+		}
+		return -1;
+	}
+
+	long long int skipped_points = 0;
+
+	// Build coords_sorted (independent per v)
+	double* coords_sorted = (double*)malloc(nv * ns * sizeof(double));
+#pragma omp parallel for schedule(static)
+	for (int v = 0; v < nv; v++) {
+		for (int s = 0; s < ns; s++)
+			coords_sorted[v * ns + s] = points[s * nv + v];
+		std::sort(coords_sorted + (v * ns), coords_sorted + ((v + 1) * ns));
+	}
+
+	// area_counter: one extra at the start for stop condition; use pointer offset like original
+	int* area_counter = ((int*)malloc((nv + 1) * sizeof(int))) + 1;
+	for (int v = -1; v < nv; v++) area_counter[v] = 0;
+
+	// For computing maxpro minima in the areas
+	double* maxpro_compute_stack = (double*)malloc(nv * ns * sizeof(double));
+	for (int s = 0; s < ns; s++) maxpro_compute_stack[s] = 1.;
+
+	// Each layer depends on the previous one (keep v sequential), parallelize over s.
+	for (int v = 0; v < (nv - 1); v++) {
+#pragma omp parallel for schedule(static)
+		for (int s = 0; s < ns; s++) {
+			maxpro_compute_stack[(v + 1) * ns + s] =
+				maxpro_compute_stack[v * ns + s] *
+				maxpro_semiAnalytical_1DAreaMaxMul(nv, ns, v, s, points, area_counter, coords_sorted, periodic);
+		}
+	}
+
+	double* best_cand = (double*)malloc(nv * sizeof(double));
+	double best_cand_maxpro = std::numeric_limits<double>::infinity();
+
+	double* curr_cand = (double*)malloc(nv * sizeof(double));
+	double* curr_cand_maxpro_d = (double*)malloc(nv * sizeof(double)); // first derivative accumulators
+	double* curr_cand_maxpro_dd = (double*)malloc(nv * sizeof(double)); // second derivative accumulators
+
+	while (area_counter[-1] == 0) {
+		// Calculate the last *layer* min maxpro (sum over s) — parallel reduction
+		double min_maxpro = 0.;
+#pragma omp parallel for reduction(+:min_maxpro) schedule(static)
+		for (int s = 0; s < ns; s++) {
+			double dx_prod =
+				maxpro_compute_stack[(nv - 1) * ns + s] *
+				maxpro_semiAnalytical_1DAreaMaxMul(nv, ns, nv - 1, s, points, area_counter, coords_sorted, periodic);
+			min_maxpro += 1. / (dx_prod * dx_prod);
+		}
+
+		if (min_maxpro < best_cand_maxpro) { // numerical root search in this area
+			// Initialize candidate at area mid and set initial "error" scale
+			double error = 0.;
+
+			if (periodic) {
+				for (int v = 0; v < nv; v++) {
+					bool area_wrapped = area_counter[v] == (ns - 1);
+					double area_start = coords_sorted[v * ns + area_counter[v]];
+					double area_end = coords_sorted[v * ns + (area_wrapped ? 0 : (area_counter[v] + 1))];
+					curr_cand[v] = area_wrapped ? ((area_start + area_end + 1.) * 0.5) : ((area_start + area_end) * 0.5);
+					if (area_wrapped && (curr_cand[v] > 1.)) curr_cand[v] -= 1.;
+					double area_dx = area_end - area_start + (area_wrapped ? 1. : 0.);
+					error += area_dx * area_dx;
+				}
+			}
+			else {
+				for (int v = 0; v < nv; v++) {
+					// (Kept verbatim with original indexing behavior)
+					double area_start = area_counter[nv - 1] ? coords_sorted[(nv - 1) * ns + area_counter[nv - 1] - 1] : 0.;
+					double area_end = (area_counter[nv - 1] == nv) ? 1. : coords_sorted[(nv - 1) * ns + area_counter[nv - 1]];
+					curr_cand[v] = (area_start + area_end) * 0.5;
+					double area_dx = area_end - area_start;
+					error += area_dx * area_dx;
+				}
+			}
+
+			error = std::sqrt(error) * 0.5;
+
+			for (int iteration_i = 0;
+				(iteration_i < max_iterations) && ((error > error_treshold) || (iteration_i < min_iterations));
+				iteration_i++)
+			{
+				// zero accumulators
+				for (int v = 0; v < nv; v++) {
+					curr_cand_maxpro_d[v] = 0.;
+					curr_cand_maxpro_dd[v] = 0.;
+				}
+
+				// Parallel accumulation over s with per-thread locals to avoid races
+#pragma omp parallel
+				{
+					double* d_local = (double*)malloc(nv * sizeof(double));
+					double* dd_local = (double*)malloc(nv * sizeof(double));
+					for (int v = 0; v < nv; v++) { d_local[v] = 0.; dd_local[v] = 0.; }
+
+#pragma omp for schedule(static)
+					for (int s = 0; s < ns; s++) {
+						double dx_prod = 1.;
+#pragma omp simd reduction(*:dx_prod)
+						for (int v = 0; v < nv; v++) {
+							double dx = periodic ? per_dist(points[s * nv + v], curr_cand[v])
+								: (points[s * nv + v] - curr_cand[v]);
+							dx_prod *= dx;
+						}
+						double maxpro = 1. / (dx_prod * dx_prod);
+
+						for (int v = 0; v < nv; v++) {
+							double dx = periodic ? per_dist(points[s * nv + v], curr_cand[v])
+								: (points[s * nv + v] - curr_cand[v]);
+							double dx_inv = 1. / dx;
+							d_local[v] += maxpro * dx_inv;            // -2 factor applied later
+							dd_local[v] += maxpro * dx_inv * dx_inv;   // +6 factor applied later
+						}
+					}
+
+					// Combine thread-local partials
+#pragma omp critical
+					{
+						for (int v = 0; v < nv; v++) {
+							curr_cand_maxpro_d[v] += d_local[v];
+							curr_cand_maxpro_dd[v] += dd_local[v];
+						}
+					}
+
+					free(d_local);
+					free(dd_local);
+				} // end parallel
+
+				// Take a Newton-like step and compute new "error"
+				double err_acc = 0.;
+				for (int v = 0; v < nv; v++) {
+					double dx = (-2.0 * curr_cand_maxpro_d[v]) / (6.0 * curr_cand_maxpro_dd[v]);
+					err_acc += dx * dx;
+					curr_cand[v] += dx;
+					if (curr_cand[v] > 1.)      curr_cand[v] -= 1.;
+					else if (curr_cand[v] < 0.) curr_cand[v] += 1.;
+				}
+				error = std::sqrt(err_acc);
+			}
+
+			// Evaluate candidate objective — parallel reduction over s
+			double curr_cand_maxpro = 0.;
+#pragma omp parallel for reduction(+:curr_cand_maxpro) schedule(static)
+			for (int s = 0; s < ns; s++) {
+				double dx_prod = 1.;
+#pragma omp simd reduction(*:dx_prod)
+				for (int v = 0; v < nv; v++) {
+					double dx = periodic ? per_dist(points[s * nv + v], curr_cand[v])
+						: (points[s * nv + v] - curr_cand[v]);
+					dx_prod *= dx;
+				}
+				curr_cand_maxpro += 1. / (dx_prod * dx_prod);
+			}
+
+			if (curr_cand_maxpro < best_cand_maxpro) {
+				double* tmp = best_cand;
+				best_cand = curr_cand;
+				curr_cand = tmp;
+				best_cand_maxpro = curr_cand_maxpro;
+			}
+		}
+		else {
+			skipped_points++;
+		}
+
+		// Stack incrementing; parallelize layer recomputes over s
+		int increment_v;
+		for (increment_v = nv - 1; area_counter[increment_v] == (periodic ? (ns - 1) : ns); increment_v--);
+		area_counter[increment_v]++;
+
+		if (increment_v >= 0 && (increment_v < (nv - 1))) {
+#pragma omp parallel for schedule(static)
+			for (int s = 0; s < ns; s++)
+				maxpro_compute_stack[(increment_v + 1) * ns + s] =
+				maxpro_compute_stack[increment_v * ns + s] *
+				maxpro_semiAnalytical_1DAreaMaxMul(nv, ns, increment_v, s, points, area_counter, coords_sorted, periodic);
+		}
+		increment_v++;
+		for (; increment_v < (nv - 1); increment_v++) {
+			area_counter[increment_v] = 0;
+#pragma omp parallel for schedule(static)
+			for (int s = 0; s < ns; s++)
+				maxpro_compute_stack[(increment_v + 1) * ns + s] =
+				maxpro_compute_stack[increment_v * ns + s] *
+				maxpro_semiAnalytical_1DAreaMaxMul(nv, ns, increment_v, s, points, area_counter, coords_sorted, periodic);
+		}
+		if (increment_v < nv) area_counter[increment_v] = 0; // last one; stack layer not updated
+	}
+
+	for (int v = 0; v < nv; v++)
+		points[ns * nv + v] = best_cand[v];
+
+	free(coords_sorted);
+	free(area_counter - 1);
+	free(maxpro_compute_stack);
+	free(best_cand);
+	free(curr_cand);
+	free(curr_cand_maxpro_d);
+	free(curr_cand_maxpro_dd);
+
+	return skipped_points;
+}
+*/
+
 /*
    This function splits the unit hypercube into areas: along each axis, they are divided by the points' coordinates. Inside each of these areas, it iteratively finds the best next point, and then it adds it to the end of the `points` array. `ns` represents number of points BEFORE calling this function.
 

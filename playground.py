@@ -110,6 +110,8 @@ cppfn.maxpro_addPoint_semiAnalytical.argtypes = (
 )
 cppfn.maxpro_addPoint_semiAnalytical.restype = ctypes.c_longlong
 
+
+
 def maxpro_addPoint_semiAnalytical(points: np.ndarray, min_iterations = 2, max_iterations = 16, error_treshold = 1e-6, periodic = True) -> np.ndarray:
     global cppfn
     assert my_des.flags['C_CONTIGUOUS']
@@ -121,6 +123,34 @@ def maxpro_addPoint_semiAnalytical(points: np.ndarray, min_iterations = 2, max_i
     skipped = cppfn.maxpro_addPoint_semiAnalytical(nv, ns, points2.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), error_treshold, min_iterations, max_iterations, periodic)
     print("Ns = " + str(ns) +", Skipped " + str(skipped) + "/" + str(ns ** nv) + " (" + str(round(skipped / (ns ** nv) * 100)) + " %)")
     return points2
+
+'''
+# version with OpenMP:
+
+cppfn.maxpro_addPoint_semiAnalytical_Par.argtypes = (
+    ctypes.c_int, # nv
+    ctypes.c_int, # ns
+    ctypes.POINTER(ctypes.c_double), # points
+    ctypes.c_double, # error_treshold
+    ctypes.c_int, # min_iterations
+    ctypes.c_int, # max_iterations
+    ctypes.c_bool # periodic
+)
+cppfn.maxpro_addPoint_semiAnalytical_Par.restype = ctypes.c_longlong
+
+def maxpro_addPoint_semiAnalytical_Par(points: np.ndarray, min_iterations = 2, max_iterations = 16, error_treshold = 1e-6, periodic = True) -> np.ndarray:
+    global cppfn
+    assert my_des.flags['C_CONTIGUOUS']
+    assert my_des.dtype == np.float64
+    ns, nv = points.shape
+    points2 = np.empty((ns + 1, nv), dtype=np.float64) # There isn't much of a better way to do this than to copy the array
+    assert points2.flags['C_CONTIGUOUS']
+    points2[:ns] = points
+    skipped = cppfn.maxpro_addPoint_semiAnalytical_Par(nv, ns, points2.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), error_treshold, min_iterations, max_iterations, periodic)
+    print("Ns = " + str(ns) +", Skipped " + str(skipped) + "/" + str(ns ** nv) + " (" + str(round(skipped / (ns ** nv) * 100)) + " %)")
+    return points2
+
+'''
 
 
 # %%
@@ -142,13 +172,14 @@ my_des = np.random.rand(5, nv)
 # %%
 my_des = maxpro_addPoint_semiAnalytical(my_des, 1, 1000, 1e-6, True)
 
+
 # %%
 my_des
 
 # %%
 plt.close("all")
 
-for _ in range(512):
+for _ in range(52):
     my_des = maxpro_addPoint_semiAnalytical(my_des, 1, 100, 1e-6, True)
 
 
