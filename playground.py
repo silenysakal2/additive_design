@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.2
+#       jupytext_version: 1.19.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -31,7 +31,7 @@ import platform
 from tqdm.notebook import trange
 
 from plotting import plot_2D_view
-  
+
 
 # %%
 from design_criteria import wd2, cl2, Mm, phip, maxPro, latinize, evaluate
@@ -218,7 +218,7 @@ else:
     fig.show()
 
 
-    
+
 # %%
 print(f" Nsim = {len(my_des)}" )
 
@@ -641,17 +641,65 @@ for v in range(nv):
         min_diff = diff
 #print("Min diff:", min_diff)
 
-# %%
+# %% [markdown]
+# # Playing around with golden ratio
 
 # %%
+ns = 1
 
 # %%
+#design = np.mod(np.arange(ns) * ((1 + np.sqrt(5)) / 2), 1)
+design = np.mod(np.log2(np.arange(ns) + 0.5), 1)
+
+fig, ax = plt.subplots(figsize=(16, 1))
+
+ax.scatter(design,   np.zeros_like(design))
+ax.scatter(design+1, np.zeros_like(design))
+ax.scatter(design-1, np.zeros_like(design))
+ax.set_xlim([-1, 2])
+
+ns += 1
 
 # %%
+plt.close("all")
 
-# %%
-
-# %%
+# %% [markdown]
+# # Normalizing MaxPro
+#
+# It generally seems to be about simply dividing by $n_s^3$, but I don't quite have a nice derivation of this in higher dimensions.
+#
+# ## 1D definitive derivation (UNFINISHED THOUGH)
+#
+# Consider a *good* design with $n_s$ points. View the design from the perspective of a single point, $X$, and its contribution to MaxPro. That would be:
+#
+# $$\sum _{i \neq X} ^{n_s} \frac{1}{\delta _{i, X} ^2}$$
+#
+# Now, increase the number of samples by $k > 1$; we want something like $\lim \limits _{k \rightarrow 1}$ (in other words $k$ should be really small). For the new design to be similarly good, we'd expect the points around $X$ to go $k$ times closer (from either side). For these points, the $\frac{1}{\delta ^2}$ may be of large values because of division by zero: even for small $\Delta x$, $\int _{-x} ^{x} \frac{1}{x^2}$ is *infinite* (formally undefined). For that reason, in the case of these nearby points, it's necessary to track their exact positions rather than a general density.
+#
+# For these shrinked points, their MaxPro contribution with $X$ will increase $k^2$ times.
+#
+# As for the new points: for $k$ close enough to $1$, we can say all these points are $0.5$ away from $X$. There are $n_s \left(k - 1\right)$ new points. That brings the MaxPro contribution to:
+#
+# $$\sum ^{n_s \left(k - 1\right)} \frac{1}{0.5 ^2} = 4 n_s \left(k - 1\right)$$
+#
+# Finally, all of this has to be $k$ times because there are now $k$ times more points that contribute like $X$ to the total MaxPro.
+#
+# If we add $\mathrm{d} n_s$ points, $k = 1 + \frac{\mathrm{d} n_s}{n_s}$. Plug that in, we get a differential equation (let $M\left(n_s\right)$ be MaxPro of a design):
+#
+# $$
+# \begin{aligned}
+# \mathrm{d} M\left(n_s\right) &=
+# k \cdot \left(\left(M\left(n_s\right) \cdot k^2 - M\left(n_s\right)\right) + 4 n_s \mathrm{d} n_s\right) \\
+# &=
+# \frac{1 + \mathrm{d} n_s}{n_s} \cdot \left(M\left(n_s\right) \cdot \left(k^2 - 1\right) + 4 n_s \mathrm{d} n_s\right) \\
+# &=
+# \frac{1 + \mathrm{d} n_s}{n_s}\cdot \left(M\left(n_s\right) \cdot \left(\frac{1}{n_s} + \frac{2}{n_s} \mathrm{d} n_s + \frac{1}{n_s} \mathrm{d} n_s ^2 - 1\right) + 4 n_s \mathrm{d} n_s\right) \\
+# &=
+# \frac{1 + \mathrm{d} n_s}{n_s} \cdot \left(2 M\left(n_s\right) \mathrm{d} n_s + M\left(n_s\right) \mathrm{d} n_s ^2 + 4 n_s \mathrm{d} n_s\right)  \\
+# &=
+# 2 M\left(n_s\right) \mathrm{d} n_s + \strikeout{M\left(n_s\right) \mathrm{d} n_s ^2} + 4 n_s \mathrm{d} n_s + 2 M\left(n_s\right) \mathrm{d} n_s ^2 + M\left(n_s\right) \mathrm{d} n_s ^3 + 4 n_s \mathrm{d} n_s ^2
+# \end{aligned}
+# $$
 
 # %%
 
