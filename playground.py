@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.19.1
+#       jupytext_version: 1.19.0
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -668,7 +668,7 @@ plt.close("all")
 #
 # It generally seems to be about simply dividing by $n_s^3$, but I don't quite have a nice derivation of this in higher dimensions.
 #
-# ## 1D definitive derivation (UNFINISHED THOUGH)
+# ## 1D definitive derivation
 #
 # Consider a *good* design with $n_s$ points. View the design from the perspective of a single point, $X$, and its contribution to MaxPro. That would be:
 #
@@ -689,19 +689,36 @@ plt.close("all")
 # $$
 # \begin{aligned}
 # \mathrm{d} M\left(n_s\right) &=
-# k \cdot \left(\left(M\left(n_s\right) \cdot k^2 - M\left(n_s\right)\right) + 4 n_s \mathrm{d} n_s\right) \\
+# k \cdot \left(M\left(n_s\right) \cdot k^2 + 4 n_s \mathrm{d} n_s\right) - M\left(n_s\right) \\
 # &=
-# \frac{1 + \mathrm{d} n_s}{n_s} \cdot \left(M\left(n_s\right) \cdot \left(k^2 - 1\right) + 4 n_s \mathrm{d} n_s\right) \\
+# \left(1 + \frac{\mathrm{d} n_s}{n_s}\right) \cdot \left(M\left(n_s\right) \cdot \left(1 + 2 \frac{\mathrm{d} n_s}{n_s} + \frac{\mathrm{d} n_s ^2}{n_s ^2}\right) + 4 n_s \mathrm{d} n_s\right) - M\left(n_s\right) \\
 # &=
-# \frac{1 + \mathrm{d} n_s}{n_s}\cdot \left(M\left(n_s\right) \cdot \left(\frac{1}{n_s} + \frac{2}{n_s} \mathrm{d} n_s + \frac{1}{n_s} \mathrm{d} n_s ^2 - 1\right) + 4 n_s \mathrm{d} n_s\right) \\
+# \left(1 + \frac{\mathrm{d} n_s}{n_s}\right) \cdot \left(M\left(n_s\right) + \frac{2 M\left(n_s\right) \mathrm{d} n_s}{n_s} + 4 n_s \mathrm{d} n_s\right) - M\left(n_s\right) \\
 # &=
-# \frac{1 + \mathrm{d} n_s}{n_s} \cdot \left(2 M\left(n_s\right) \mathrm{d} n_s + M\left(n_s\right) \mathrm{d} n_s ^2 + 4 n_s \mathrm{d} n_s\right)  \\
+# M\left(n_s\right) + \frac{2 M\left(n_s\right) \mathrm{d} n_s}{n_s} + 4 n_s \mathrm{d} n_s + \frac{M\left(n_s\right) \mathrm{d} n_s}{n_s} + \frac{2 M\left(n_s\right) \mathrm{d} n_s ^2}{n_s ^2} + 4 \mathrm{d} n_s ^2 - M\left(n_s\right) \\
 # &=
-# 2 M\left(n_s\right) \mathrm{d} n_s + \strikeout{M\left(n_s\right) \mathrm{d} n_s ^2} + 4 n_s \mathrm{d} n_s + 2 M\left(n_s\right) \mathrm{d} n_s ^2 + M\left(n_s\right) \mathrm{d} n_s ^3 + 4 n_s \mathrm{d} n_s ^2
+# \frac{3 M\left(n_s\right) \mathrm{d} n_s}{n_s} + 4 n_s \mathrm{d} n_s \\
+# \frac{\mathrm{d} M\left(n_s\right)}{\mathrm{d} n_s} &=
+# \frac{3 M\left(n_s\right)}{n_s} + 4 n_s
 # \end{aligned}
 # $$
+#
+# Wolfram Alpha says that's:
+#
+# $$M \left(n_s\right) = c n_s ^3 - 4 n_s ^2$$
+#
+# Where $c$ appears to be, from testing, $\frac{\pi ^2}{3}$.
 
 # %%
+ns = 1
+
+print("ns\tLHS 1D MaxPro\tnormalized\tnormalized but only ns^3, not that linear component".expandtabs(24))
+while ns < 1_000_000_000:
+    actual_maxpro = ns * (2 * np.sum(1 / (((np.arange((ns-1) // 2) + 1) / ns) ** 2)) + (0 if (ns % 2 == 1) else 4))
+    normalized1 = actual_maxpro / ((ns ** 3) * (np.pi ** 2) / 3 - (4 * (ns ** 2)))
+    normalized2 = actual_maxpro / (ns ** 3) / (np.pi ** 2) * 3
+    print(f"{ns}\t{actual_maxpro}\t{normalized1}\t{normalized2}".expandtabs(24))
+    ns *= 2
 
 # %%
 
