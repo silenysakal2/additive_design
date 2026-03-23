@@ -154,7 +154,7 @@ def maxpro_addPoint_semiAnalytical_Par(points: np.ndarray, min_iterations = 2, m
 
 
 # %%
-nv = 2
+nv = 3
 ns = 106
 
 
