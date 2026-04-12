@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.19.0
+#       jupytext_version: 1.19.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -121,7 +121,7 @@ def maxpro_addPoint_semiAnalytical(points: np.ndarray, min_iterations = 2, max_i
     assert points2.flags['C_CONTIGUOUS']
     points2[:ns] = points
     skipped = cppfn.maxpro_addPoint_semiAnalytical(nv, ns, points2.ctypes.data_as(ctypes.POINTER(ctypes.c_double)), error_treshold, min_iterations, max_iterations, periodic)
-    print("Ns = " + str(ns) +", Skipped " + str(skipped) + "/" + str(ns ** nv) + " (" + str(round(skipped / (ns ** nv) * 100)) + " %)")
+    #print("Ns = " + str(ns) +", Skipped " + str(skipped) + "/" + str(ns ** nv) + " (" + str(round(skipped / (ns ** nv) * 100)) + " %)")
     return points2
 
 '''
@@ -154,8 +154,8 @@ def maxpro_addPoint_semiAnalytical_Par(points: np.ndarray, min_iterations = 2, m
 
 
 # %%
-nv = 3
-ns = 106
+nv = 2
+ns = 100
 
 
 # Additive designs
@@ -177,9 +177,12 @@ my_des = maxpro_addPoint_semiAnalytical(my_des, 1, 1000, 1e-6, True)
 my_des
 
 # %%
+my_des.shape
+
+# %%
 plt.close("all")
 
-for _ in range(52):
+while my_des.shape[0] < ns:
     my_des = maxpro_addPoint_semiAnalytical(my_des, 1, 100, 1e-6, True)
 
 
@@ -218,6 +221,151 @@ else:
     fig.show()
 
 
+
+# %% [markdown]
+# # Batch-generating designs
+
+# %%
+# Taken from uMaxPro on GitHub, slightly modified
+
+def maxPro_np(x: np.ndarray, periodic = True) -> float:  # single loop
+    """
+    Compute the (u)MaxPro criterion for a given design matrix.
+
+    This function calculates the MaxPro or uMaxPro criterion for a given 2D design matrix `x`.
+    The MaxPro criterion is used in experimental design to ensure good space-filling properties.
+    If `periodic` is set to True, the function computes the uMaxPro criterion, which accounts
+    for periodic boundary conditions.
+
+    Args:
+        x (np.ndarray): A 2D array of shape (ns, nv) representing the design points.
+        ns (int): The number of samples (design points).
+        nv (int): The number of variables (dimensions).
+        periodic (bool, optional): If True, computes the uMaxPro criterion
+            (periodic case). If False, computes the MaxPro criterion
+            (non-periodic case). Default is False.
+
+    Returns:
+        float: The computed (u)MaxPro criterion value.
+
+    Notes:
+        - The MaxPro criterion favors designs that are space-filling by maximizing the
+          minimum product of squared distances between points.
+        - The uMaxPro variant uses periodic distance calculations.
+    """
+
+    # Ensure ns and nv are consistent with the shape of x
+    ns, nv = x.shape
+
+    maxpro = 0  # Initialize the criterion accumulator
+
+    # Iterate over each design point
+    for i in range(ns):
+        # Compute the absolute differences between point i and all previous points
+        deltas = np.abs(x[i, :] - x[0:i, :])
+
+        if periodic is True:
+            # Apply periodic boundary conditions by wrapping distances
+            deltas = np.minimum(deltas, 1 - deltas)
+
+        # Square the differences to get squared distances
+        dsq = deltas ** 2
+
+        # Compute the reciprocal of the product of squared distances for each pair
+        # Sum them up and add to the maxpro accumulator
+        maxpro += np.sum(1. / np.prod(dsq, axis=1))
+
+    return maxpro
+
+
+# %%
+class Setting:
+    nv: int
+    ns: int
+    nr: int
+    coord: list[int]
+
+    def __init__(self, nv, ns, nr, coord):
+        self.nv = nv
+        self.ns = ns
+        self.nr = nr
+        self.coord = coord
+
+    def __str__(self):
+        return f"nv: {self.nv} ns: {self.ns} nr: {self.nr} coord: {self.coord}"
+
+
+# %%
+settings = []
+for nv in range(2, 6):
+    for i, ns in enumerate([12, 16, 24, 32, 64, 128, 256, 512, 1024]):
+        settings.append(Setting(nv, ns, 30, [nv-2, i]))
+        print(settings[-1])
+
+# %%
+maxpros = -np.ones([4, 9, 30]) # So that there are negative ones for uninitialized
+
+for setting in settings:
+    print(setting)
+    nv = setting.nv
+    ns = setting.ns
+    nr = setting.nr
+
+    designs = np.empty([nr, ns, nv])
+    for i in trange(nr):
+        curr_des = np.empty([5, nv])
+        for v in range(nv):
+            coords = np.random.permutation((np.arange(5) / 5) + (0.1))
+            curr_des[:, v] = coords
+        #print(curr_des)
+        while curr_des.shape[0] < ns:
+            curr_des = maxpro_addPoint_semiAnalytical(curr_des, 1, 100, 1e-8, True)
+        designs[i] = curr_des
+        maxpros[tuple(setting.coord + [i])] = maxPro_np(curr_des)
+    np.save(f"data/designs_nv{"{:02d}".format(nv)}_ns{"{:04d}".format(ns)}_nr{"{:04d}".format(nr)}.npy", designs)
+
+# %%
+designs = np.load("data/designs_nv02_ns0024_nr0030.npy")
+
+# %%
+fig, ax = plt.subplots(2, 2, figsize=(8, 8))
+ax0 = ax[0][0]
+
+my_des = designs[5]
+ns, nv = my_des.shape
+
+if nv==2:
+    fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+    plot_2D_view(my_des.shape[1], my_des.shape[0], my_des, ax, vars_to_plot=[0, 1])
+else:
+    fig, ax = plt.subplots(2, 2, figsize=(8, 8))
+    ax0 = ax[0][0]
+
+    ax0.scatter(my_des[:, 0], my_des[:, 1], c = "k")
+    ax0.scatter(my_des[-1, 0], my_des[-1, 1], c = "red")
+    ax0.set_xlim(0, 1)
+    ax0.set_xticklabels(["" for _ in range(my_des.shape[0])])
+    ax0.set_ylim(0, 1)
+    ax0.set_yticklabels(["" for _ in range(my_des.shape[0])])
+    ax0.set_xticks(my_des[:, 0])
+    ax0.set_yticks(my_des[:, 1])
+
+    ax1 = ax[1][0]
+    ax1.scatter(my_des[:, 1], my_des[:, 2], c = "k")
+    ax1.scatter(my_des[-1, 1], my_des[-1, 2], c = "red")
+    ax1.set_xlim(0, 1)
+    ax1.set_ylim(0, 1)
+    ax1.set_xticks(my_des[:, 1])
+    ax1.set_yticks(my_des[:, 2])
+    ax2 = ax[0][1]
+    ax2.scatter(my_des[:, 2], my_des[:, 0], c = "k")
+    ax2.scatter(my_des[-1, 2], my_des[-1, 0], c = "red")
+    ax2.set_xlim(0, 1)
+    ax2.set_ylim(0, 1)
+    ax2.set_xticks(my_des[:, 2])
+    ax2.set_yticks(my_des[:, 0])
+
+    fig.show()
 
 # %%
 print(f" Nsim = {len(my_des)}" )
@@ -462,7 +610,7 @@ hist2 = hist.astype(float) / nr * ns
 hist2
 
 # %%
-symmetrize = True # to generate the additional designs from the existing ones
+symmetrize = False # to generate the additional designs from the existing ones
 
 n_des = nr #number of designes packed into x_opt_all
 
@@ -511,7 +659,7 @@ fig, ax = plt.subplots(figsize=(16, 16))
 vmin, vmax = 0, 5
 
 if periodic:
-    vmin, vmax = 0.9, 1.1
+    vmin, vmax = 0, 2
     
 ax.matshow(histogram_s, vmin=vmin, vmax=vmax)
 
