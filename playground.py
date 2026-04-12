@@ -325,17 +325,30 @@ for setting in settings:
     np.save(f"data/designs_nv{"{:02d}".format(nv)}_ns{"{:04d}".format(ns)}_nr{"{:04d}".format(nr)}.npy", designs)
 
 # %%
-designs = np.load("data/designs_nv02_ns0256_nr0030.npy")
+designs = np.load("data/designs_nv03_ns0128_nr0030.npy")
+designs_SA = [np.load(f"data_SA/nv=0003_ns={"{:05d}".format(ns)}_per=True_ndes=000401-x_opt_all.npy") for ns in [4, 8, 16, 32, 64, 128, 256, 512, 1024]]
 
 # %%
-maxpros = -np.ones([nr, designs.shape[1]+1])
+maxpros_SA_x = np.array([4, 8, 16, 32, 64, 128, 256, 512, 1024])
 
-for r in range(designs.shape[0]):
+# %%
+maxpros_SA = np.empty([401, maxpros_SA_x.shape[0]])
+
+# %%
+for ks in trange(maxpros_SA_x.shape[0]):
+    for r in range(401):
+        maxpros_SA[r, ks] = maxPro_np(designs_SA[ks][r])
+
+# %%
+maxpros = -np.ones([designs.shape[0], designs.shape[1]+1])
+
+for r in trange(designs.shape[0]):
     for ns in range(5, designs.shape[1]+1):
         maxpros[r, ns] = maxPro_np(designs[r, :ns, :])
 
 # %%
-maxpros2 = maxpros / (np.arange(ns+1)[np.newaxis, :] ** 3.25)
+maxpros2 = maxpros / (np.arange(ns+1)[np.newaxis, :] ** 3.5)
+maxpros_SA2 = maxpros_SA / (maxpros_SA_x ** 3.5)
 
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(8, 8))
@@ -343,6 +356,8 @@ ax0 = ax
 
 for r in range(designs.shape[0]):
     ax0.plot(np.arange(designs.shape[1]+1 - 5) + 5, maxpros2[r, 5:])
+for r in range(401):
+    ax0.plot(maxpros_SA_x, maxpros_SA2[r], c = "k")
 
 plt.show()
 
