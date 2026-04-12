@@ -297,8 +297,8 @@ class Setting:
 
 # %%
 settings = []
-for nv in range(2, 6):
-    for i, ns in enumerate([12, 16, 24, 32, 64, 128, 256, 512, 1024]):
+for nv in range(3, 6):
+    for i, ns in enumerate([128]):
         settings.append(Setting(nv, ns, 30, [nv-2, i]))
         print(settings[-1])
 
@@ -325,7 +325,26 @@ for setting in settings:
     np.save(f"data/designs_nv{"{:02d}".format(nv)}_ns{"{:04d}".format(ns)}_nr{"{:04d}".format(nr)}.npy", designs)
 
 # %%
-designs = np.load("data/designs_nv02_ns0024_nr0030.npy")
+designs = np.load("data/designs_nv02_ns0256_nr0030.npy")
+
+# %%
+maxpros = -np.ones([nr, designs.shape[1]+1])
+
+for r in range(designs.shape[0]):
+    for ns in range(5, designs.shape[1]+1):
+        maxpros[r, ns] = maxPro_np(designs[r, :ns, :])
+
+# %%
+maxpros2 = maxpros / (np.arange(ns+1)[np.newaxis, :] ** 3.25)
+
+# %%
+fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+ax0 = ax
+
+for r in range(designs.shape[0]):
+    ax0.plot(np.arange(designs.shape[1]+1 - 5) + 5, maxpros2[r, 5:])
+
+plt.show()
 
 # %%
 fig, ax = plt.subplots(2, 2, figsize=(8, 8))
