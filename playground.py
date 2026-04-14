@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.19.1
+#       jupytext_version: 1.18.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -341,13 +341,17 @@ for ks in trange(maxpros_SA_x.shape[0]):
 
 # %%
 maxpros = -np.ones([designs.shape[0], designs.shape[1]+1])
+maxprosL = -np.ones([designs.shape[0], designs.shape[1]+1])
 
 for r in trange(designs.shape[0]):
     for ns in range(5, designs.shape[1]+1):
-        maxpros[r, ns] = maxPro_np(designs[r, :ns, :])
+        d = designs[r, :ns, :]
+        maxpros[r, ns] = maxPro_np(d)
+        maxprosL[r, ns] = maxPro_np(latinize(d))
 
 # %%
 maxpros2 = maxpros / (np.arange(ns+1)[np.newaxis, :] ** 3.5)
+maxpros2L = maxprosL / (np.arange(ns+1)[np.newaxis, :] ** 3.5)
 maxpros_SA2 = maxpros_SA / (maxpros_SA_x ** 3.5)
 
 # %%
@@ -355,9 +359,10 @@ fig, ax = plt.subplots(1, 1, figsize=(8, 8))
 ax0 = ax
 
 for r in range(designs.shape[0]):
-    ax0.plot(np.arange(designs.shape[1]+1 - 5) + 5, maxpros2[r, 5:])
+    ax0.plot(np.arange(designs.shape[1]+1 - 5) + 5, maxpros2[r, 5:], c='r')
+    ax0.plot(np.arange(designs.shape[1]+1 - 5) + 5, maxpros2L[r, 5:], c='k')
 for r in range(401):
-    ax0.plot(maxpros_SA_x, maxpros_SA2[r], c = "k")
+    ax0.plot(maxpros_SA_x, maxpros_SA2[r], c = "b")
 
 plt.show()
 
