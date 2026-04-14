@@ -297,13 +297,54 @@ class Setting:
 
 # %%
 settings = []
-for nv in range(3, 6):
-    for i, ns in enumerate([128]):
-        settings.append(Setting(nv, ns, 30, [nv-2, i]))
+nr = 10
+for nv in range(3, 4):
+    for i, ns in enumerate([512]):
+        settings.append(Setting(nv, ns, nr, [nv-2, i]))
         print(settings[-1])
 
 # %%
-maxpros = -np.ones([4, 9, 30]) # So that there are negative ones for uninitialized
+import numpy as np
+from joblib import Parallel, delayed
+
+def compute_one_design(i, nv, ns, seed=None):
+    rng = np.random.default_rng(seed)
+
+    curr_des = np.empty((5, nv))
+    for v in range(nv):
+        coords = rng.permutation((np.arange(5) / 5) + 0.1)
+        curr_des[:, v] = coords
+
+    while curr_des.shape[0] < ns:
+        curr_des = maxpro_addPoint_semiAnalytical(curr_des, 1, 100, 1e-8, True)
+
+    maxpro_val = maxPro_np(curr_des)
+    return i, curr_des, maxpro_val
+
+
+maxpros = -np.ones([4, 9, nr])
+
+for setting in settings:
+    print(setting)
+    nv = setting.nv
+    ns = setting.ns
+    nr = setting.nr
+
+    results = Parallel(n_jobs=-1, prefer="threads")(
+        delayed(compute_one_design)(i, nv, ns, seed=12345 + i)
+        for i in range(nr)
+    )
+
+    designs = np.empty((nr, ns, nv))
+
+    for i, curr_des, maxpro_val in results:
+        designs[i] = curr_des
+        maxpros[tuple(setting.coord + [i])] = maxpro_val
+
+    np.save(f"data/designs_nv{nv:02d}_ns{ns:04d}_nr{nr:04d}.npy", designs)
+
+# %%
+maxpros = -np.ones([4, 9, nr]) # So that there are negative ones for uninitialized
 
 for setting in settings:
     print(setting)
