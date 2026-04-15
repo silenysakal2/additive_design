@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.18.1
+#       jupytext_version: 1.19.0
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -303,6 +303,19 @@ for nvar in range(3, 4):
     for i, nsim in enumerate([ns]):
         settings.append(Setting(nvar, nsim, nr, [nvar-2, i]))
         print(settings[-1])
+
+# %% [markdown]
+# # Meshgrid design here
+
+# %%
+design = (maxpro_design_meshgrid(nv, ns, seed = None, periodic = True, rand_ini = True, rand_sel = True) + 0.5) / ns
+
+# %%
+fig, ax = plt.subplots(1, 1, figsize = [16, 16])
+ax.scatter(design[:, 0], design[:, 1])
+ax.set_xlim(0, 1)
+ax.set_ylim(0, 1)
+fig.show()
 
 # %%
 import numpy as np
