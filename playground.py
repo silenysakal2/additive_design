@@ -298,31 +298,75 @@ class Setting:
 # %%
 settings = []
 nr = 10
-for nv in range(3, 4):
-    for i, ns in enumerate([512]):
-        settings.append(Setting(nv, ns, nr, [nv-2, i]))
+ns = 1024
+for nvar in range(3, 4):
+    for i, nsim in enumerate([ns]):
+        settings.append(Setting(nvar, nsim, nr, [nvar-2, i]))
         print(settings[-1])
 
 # %%
 import numpy as np
-from joblib import Parallel, delayed
+import threading
+from queue import Queue
+from tqdm.auto import tqdm
 
-def compute_one_design(i, nv, ns, seed=None):
-    rng = np.random.default_rng(seed)
-
+def make_initial_design(nv, rng):
     curr_des = np.empty((5, nv))
     for v in range(nv):
         coords = rng.permutation((np.arange(5) / 5) + 0.1)
         curr_des[:, v] = coords
-
-    while curr_des.shape[0] < ns:
-        curr_des = maxpro_addPoint_semiAnalytical(curr_des, 1, 100, 1e-8, True)
-
-    maxpro_val = maxPro_np(curr_des)
-    return i, curr_des, maxpro_val
+    return curr_des
 
 
-maxpros = -np.ones([4, 9, nr])
+def worker(worker_id, task_queue, results, nv, ns, pbar_lock):
+    while True:
+        item = task_queue.get()
+        if item is None:
+            task_queue.task_done()
+            break
+
+        i, seed = item
+        rng = np.random.default_rng(seed)
+
+        curr_des = make_initial_design(nv, rng)
+
+        # one persistent bar position per worker
+        bar = tqdm(
+            total=ns,
+            initial=curr_des.shape[0],
+            desc=f"thread {worker_id} | design {i}",
+            position=worker_id,
+            leave=True,
+            dynamic_ncols=True,
+        )
+
+        while curr_des.shape[0] < ns:
+            old_n = curr_des.shape[0]
+            curr_des = maxpro_addPoint_semiAnalytical(curr_des, 1, 100, 1e-8, True)
+            new_n = curr_des.shape[0]
+
+            # usually +1, but safe even if function adds more than one row
+            if new_n > old_n:
+                with pbar_lock:
+                    bar.update(new_n - old_n)
+
+        maxpro_val = maxPro_np(curr_des)
+        results[i] = (curr_des, maxpro_val)
+
+        with pbar_lock:
+            bar.set_description(f"thread {worker_id} | done {i}")
+            bar.close()
+
+        task_queue.task_done()
+
+
+# choose how many bars / worker threads you want
+n_threads = 10
+
+
+
+#maxpros = -np.ones([4, 9, nr])  # only if nr is same for all settings
+
 
 for setting in settings:
     print(setting)
@@ -330,44 +374,119 @@ for setting in settings:
     ns = setting.ns
     nr = setting.nr
 
-    results = Parallel(n_jobs=-1, prefer="threads")(
-        delayed(compute_one_design)(i, nv, ns, seed=12345 + i)
-        for i in range(nr)
-    )
-
     designs = np.empty((nr, ns, nv))
+    maxpro_vals = np.empty(nr)
 
-    for i, curr_des, maxpro_val in results:
+    task_queue = Queue()
+    results = [None] * nr
+    pbar_lock = threading.Lock()
+
+    # fill task queue
+    for i in range(nr):
+        task_queue.put((i, 12345 + i))
+
+    # add stop signals
+    for _ in range(n_threads):
+        task_queue.put(None)
+
+    # start workers
+    threads = []
+    for worker_id in range(n_threads):
+        t = threading.Thread(
+            target=worker,
+            args=(worker_id, task_queue, results, nv, ns, pbar_lock),
+            daemon=True,
+        )
+        t.start()
+        threads.append(t)
+
+    # wait until all work is done
+    task_queue.join()
+
+    for t in threads:
+        t.join()
+
+    # collect results
+    for i, item in enumerate(results):
+        curr_des, maxpro_val = item
         designs[i] = curr_des
-        maxpros[tuple(setting.coord + [i])] = maxpro_val
+        maxpro_vals[i] = maxpro_val
+        # maxpros[tuple(setting.coord + [i])] = maxpro_val
 
     np.save(f"data/designs_nv{nv:02d}_ns{ns:04d}_nr{nr:04d}.npy", designs)
 
+# %% [raw]
+# maxpros = -np.ones([4, 9, nr]) # So that there are negative ones for uninitialized
+#
+# for setting in settings:
+#     print(setting)
+#     nv = setting.nv
+#     ns = setting.ns
+#     nr = setting.nr
+#
+#     designs = np.empty([nr, ns, nv])
+#     for i in trange(nr):
+#         curr_des = np.empty([5, nv])
+#         for v in range(nv):
+#             coords = np.random.permutation((np.arange(5) / 5) + (0.1))
+#             curr_des[:, v] = coords
+#         #print(curr_des)
+#         while curr_des.shape[0] < ns:
+#             curr_des = maxpro_addPoint_semiAnalytical(curr_des, 1, 100, 1e-8, True)
+#         designs[i] = curr_des
+#         maxpros[tuple(setting.coord + [i])] = maxPro_np(curr_des)
+#     np.save(f"data/designs_nv{"{:02d}".format(nv)}_ns{"{:04d}".format(ns)}_nr{"{:04d}".format(nr)}.npy", designs)
+
 # %%
-maxpros = -np.ones([4, 9, nr]) # So that there are negative ones for uninitialized
-
-for setting in settings:
-    print(setting)
-    nv = setting.nv
-    ns = setting.ns
-    nr = setting.nr
-
-    designs = np.empty([nr, ns, nv])
-    for i in trange(nr):
-        curr_des = np.empty([5, nv])
-        for v in range(nv):
-            coords = np.random.permutation((np.arange(5) / 5) + (0.1))
-            curr_des[:, v] = coords
-        #print(curr_des)
-        while curr_des.shape[0] < ns:
-            curr_des = maxpro_addPoint_semiAnalytical(curr_des, 1, 100, 1e-8, True)
-        designs[i] = curr_des
-        maxpros[tuple(setting.coord + [i])] = maxPro_np(curr_des)
-    np.save(f"data/designs_nv{"{:02d}".format(nv)}_ns{"{:04d}".format(ns)}_nr{"{:04d}".format(nr)}.npy", designs)
 
 # %%
-designs = np.load("data/designs_nv03_ns0128_nr0030.npy")
-designs_SA = [np.load(f"data_SA/nv=0003_ns={"{:05d}".format(ns)}_per=True_ndes=000401-x_opt_all.npy") for ns in [4, 8, 16, 32, 64, 128, 256, 512, 1024]]
+from pathlib import Path
+import re
+import numpy as np
+
+def load_designs_SA(nv, folder="data_SA"):
+    folder = Path(folder)
+
+    # nv=0002_ns=00512_per=True_ndes=000401-x_opt_all.npy
+    pattern = re.compile(
+        rf"nv={nv:04d}_ns=(\d{{5}})_per=True_ndes=000401-x_opt_all\.npy"
+    )
+
+    files_with_ns = []
+
+    for path in folder.glob(f"nv={nv:04d}_ns=*_per=True_ndes=000401-x_opt_all.npy"):
+        m = pattern.fullmatch(path.name)
+        if m:
+            ns = int(m.group(1))
+            files_with_ns.append((ns, path))
+
+    files_with_ns.sort(key=lambda x: x[0])
+
+    ns_values = [ns for ns, _ in files_with_ns]
+    designs_SA = [np.load(path) for _, path in files_with_ns]
+
+    return ns_values, designs_SA
+
+
+# %%
+# LOAD ADDITIVE DESIGNS
+
+# nr =
+# nv =
+
+designs = np.load(f"data/designs_nv{nv:02d}_ns{ns:04d}_nr{nr:04d}.npy")
+
+
+# LOAD SA DESIGNS
+
+ns_values, designs_SA = load_designs_SA(nv)
+
+print(ns_values)
+print(len(designs_SA))
+print(designs_SA[0].shape if designs_SA else "nic nenalezeno")
+
+# %%
+designs.shape, designs_SA
 
 # %%
 maxpros_SA_x = np.array([4, 8, 16, 32, 64, 128, 256, 512, 1024])
@@ -381,30 +500,210 @@ for ks in trange(maxpros_SA_x.shape[0]):
         maxpros_SA[r, ks] = maxPro_np(designs_SA[ks][r])
 
 # %%
-maxpros = -np.ones([designs.shape[0], designs.shape[1]+1])
-maxprosL = -np.ones([designs.shape[0], designs.shape[1]+1])
+import numpy as np
+import threading
+from queue import Queue
+from tqdm.auto import tqdm
 
-for r in trange(designs.shape[0]):
-    for ns in range(5, designs.shape[1]+1):
-        d = designs[r, :ns, :]
-        maxpros[r, ns] = maxPro_np(d)
-        maxprosL[r, ns] = maxPro_np(latinize(d))
+def worker(worker_id, task_queue, designs, maxpros, maxprosL, pbar_lock):
+    bar = tqdm(
+        total=designs.shape[1] + 1,
+        initial=5,
+        desc=f"thread {worker_id}",
+        position=worker_id,
+        leave=True,
+        dynamic_ncols=True,
+    )
+
+    while True:
+        r = task_queue.get()
+        if r is None:
+            task_queue.task_done()
+            break
+
+        with pbar_lock:
+            bar.reset(total=designs.shape[1] + 1)
+            bar.n = 5
+            bar.set_description(f"thread {worker_id} | r={r}")
+            bar.refresh()
+
+        for ns in range(5, designs.shape[1] + 1):
+            d = designs[r, :ns, :]
+            maxpros[r, ns] = maxPro_np(d)
+            maxprosL[r, ns] = maxPro_np(latinize(d))
+
+            with pbar_lock:
+                bar.update(1)
+
+        task_queue.task_done()
+
+    with pbar_lock:
+        bar.close()
+
+
+n_threads = designs.shape[0]
+
+maxpros = -np.ones((designs.shape[0], designs.shape[1] + 1))
+maxprosL = -np.ones((designs.shape[0], designs.shape[1] + 1))
+
+task_queue = Queue()
+pbar_lock = threading.Lock()
+
+for r in range(designs.shape[0]):
+    task_queue.put(r)
+
+for _ in range(n_threads):
+    task_queue.put(None)
+
+threads = []
+for worker_id in range(n_threads):
+    t = threading.Thread(
+        target=worker,
+        args=(worker_id, task_queue, designs, maxpros, maxprosL, pbar_lock),
+        daemon=True,
+    )
+    t.start()
+    threads.append(t)
+
+task_queue.join()
+
+for t in threads:
+    t.join()
 
 # %%
-maxpros2 = maxpros / (np.arange(ns+1)[np.newaxis, :] ** 3.5)
-maxpros2L = maxprosL / (np.arange(ns+1)[np.newaxis, :] ** 3.5)
-maxpros_SA2 = maxpros_SA / (maxpros_SA_x ** 3.5)
+maxpros.shape, maxprosL.shape
+
+# %%
+# Parallel version with selection of some sample sizes only
+
+import numpy as np
+import threading
+from queue import Queue
+from tqdm.auto import tqdm
+
+def worker(worker_id, task_queue, designs, sample_sizes, maxpros, maxprosL, pbar_lock):
+    bar = tqdm(
+        total=len(sample_sizes),
+        initial=0,
+        desc=f"thread {worker_id}",
+        position=worker_id,
+        leave=True,
+        dynamic_ncols=True,
+    )
+
+    while True:
+        r = task_queue.get()
+        if r is None:
+            task_queue.task_done()
+            break
+
+        with pbar_lock:
+            bar.reset(total=len(sample_sizes))
+            bar.n = 0
+            bar.set_description(f"thread {worker_id} | r={r}")
+            bar.refresh()
+
+        for j, ns in enumerate(sample_sizes):
+            d = designs[r, :ns, :]
+            maxpros[r, j] = maxPro_np(d)
+            maxprosL[r, j] = maxPro_np(latinize(d))
+
+            with pbar_lock:
+                bar.update(1)
+
+        task_queue.task_done()
+
+    with pbar_lock:
+        bar.close()
+
+
+n_threads = designs.shape[0]
+n_discr = 30
+
+sample_sizes = np.unique(np.linspace(5, designs.shape[1], n_discr, dtype=int))
+
+maxpros = -np.ones((designs.shape[0], len(sample_sizes)))
+maxprosL = -np.ones((designs.shape[0], len(sample_sizes)))
+
+task_queue = Queue()
+pbar_lock = threading.Lock()
+
+for r in range(designs.shape[0]):
+    task_queue.put(r)
+
+for _ in range(n_threads):
+    task_queue.put(None)
+
+threads = []
+for worker_id in range(n_threads):
+    t = threading.Thread(
+        target=worker,
+        args=(worker_id, task_queue, designs, sample_sizes, maxpros, maxprosL, pbar_lock),
+        daemon=True,
+    )
+    t.start()
+    threads.append(t)
+
+task_queue.join()
+
+for t in threads:
+    t.join()
+
+
+
+
+
+fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+
+for r in range(designs.shape[0]):
+    ax.plot(sample_sizes, maxpros[r], c='r', label='additive' if r == 0 else None)
+    ax.plot(sample_sizes, maxprosL[r], c='k', label='additive latinized' if r == 0 else None)
+
+plt.legend()
+plt.show()
+
+# %% [raw]
+# maxpros = -np.ones([designs.shape[0], designs.shape[1]+1])
+# maxprosL = -np.ones([designs.shape[0], designs.shape[1]+1])
+#
+# for r in trange(designs.shape[0]):
+#     for ns in range(5, designs.shape[1]+1):
+#         d = designs[r, :ns, :]
+#         maxpros[r, ns] = maxPro_np(d)
+#         maxprosL[r, ns] = maxPro_np(latinize(d))
+
+# %%
+ns = maxpros.shape[1]
+ns
+
+# %%
+maxpros2 = maxpros / (np.arange(ns)[np.newaxis, :] ** 3.15)
+maxpros2L = maxprosL / (np.arange(ns)[np.newaxis, :] ** 3.15)
+maxpros_SA2 = maxpros_SA / (maxpros_SA_x ** 3.15)
 
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(8, 8))
 ax0 = ax
 
 for r in range(designs.shape[0]):
-    ax0.plot(np.arange(designs.shape[1]+1 - 5) + 5, maxpros2[r, 5:], c='r')
-    ax0.plot(np.arange(designs.shape[1]+1 - 5) + 5, maxpros2L[r, 5:], c='k')
-for r in range(401):
-    ax0.plot(maxpros_SA_x, maxpros_SA2[r], c = "b")
+    ax0.plot(
+        np.arange(designs.shape[1]+1 - 5) + 5,
+        maxpros2[r, 5:],
+        c='r',
+        label='additive' if r == 0 else None
+    )
+    ax0.plot(
+        np.arange(designs.shape[1]+1 - 5) + 5,
+        maxpros2L[r, 5:],
+        c='k',
+        label='additive latinized' if r == 0 else None
+    )
 
+for r in range(401):
+    ax0.plot(maxpros_SA_x, maxpros_SA2[r], c="b",
+             label='SA' if r == 0 else None)
+
+plt.legend()
 plt.show()
 
 # %%
