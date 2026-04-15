@@ -299,7 +299,7 @@ class Setting:
 settings = []
 nr = 10
 ns = 1024
-for nvar in range(3, 4):
+for nvar in range(2, 3):
     for i, nsim in enumerate([ns]):
         settings.append(Setting(nvar, nsim, nr, [nvar-2, i]))
         print(settings[-1])
@@ -310,15 +310,15 @@ import threading
 from queue import Queue
 from tqdm.auto import tqdm
 
-def make_initial_design(nv, rng):
-    curr_des = np.empty((5, nv))
+def make_initial_design(ns, nv, rng):
+    curr_des = np.empty((ns, nv))
     for v in range(nv):
-        coords = rng.permutation((np.arange(5) / 5) + 0.1)
+        coords = rng.permutation((np.arange(ns) / ns) + 0.5/ns)
         curr_des[:, v] = coords
     return curr_des
 
 
-def worker(worker_id, task_queue, results, nv, ns, pbar_lock):
+def worker(worker_id, task_queue, results, nv, ns, ns_ini, min_iters, max_iters, error_treshold, periodic, pbar_lock):
     while True:
         item = task_queue.get()
         if item is None:
@@ -328,7 +328,7 @@ def worker(worker_id, task_queue, results, nv, ns, pbar_lock):
         i, seed = item
         rng = np.random.default_rng(seed)
 
-        curr_des = make_initial_design(nv, rng)
+        curr_des = make_initial_design(ns_ini, nv, rng)
 
         # one persistent bar position per worker
         bar = tqdm(
@@ -342,7 +342,7 @@ def worker(worker_id, task_queue, results, nv, ns, pbar_lock):
 
         while curr_des.shape[0] < ns:
             old_n = curr_des.shape[0]
-            curr_des = maxpro_addPoint_semiAnalytical(curr_des, 1, 100, 1e-8, True)
+            curr_des = maxpro_addPoint_semiAnalytical(curr_des, min_iters, max_iters, error_treshold, periodic)
             new_n = curr_des.shape[0]
 
             # usually +1, but safe even if function adds more than one row
@@ -373,6 +373,10 @@ for setting in settings:
     nv = setting.nv
     ns = setting.ns
     nr = setting.nr
+    ns_ini = 5
+    min_iters, max_iters = 1,1
+    error_treshold = 1e-8
+    periodic = True
 
     designs = np.empty((nr, ns, nv))
     maxpro_vals = np.empty(nr)
@@ -394,7 +398,7 @@ for setting in settings:
     for worker_id in range(n_threads):
         t = threading.Thread(
             target=worker,
-            args=(worker_id, task_queue, results, nv, ns, pbar_lock),
+            args=(worker_id, task_queue, results, nv, ns, ns_ini, min_iters, max_iters, error_treshold, periodic, pbar_lock),
             daemon=True,
         )
         t.start()
@@ -500,80 +504,6 @@ for ks in trange(maxpros_SA_x.shape[0]):
         maxpros_SA[r, ks] = maxPro_np(designs_SA[ks][r])
 
 # %%
-import numpy as np
-import threading
-from queue import Queue
-from tqdm.auto import tqdm
-
-def worker(worker_id, task_queue, designs, maxpros, maxprosL, pbar_lock):
-    bar = tqdm(
-        total=designs.shape[1] + 1,
-        initial=5,
-        desc=f"thread {worker_id}",
-        position=worker_id,
-        leave=True,
-        dynamic_ncols=True,
-    )
-
-    while True:
-        r = task_queue.get()
-        if r is None:
-            task_queue.task_done()
-            break
-
-        with pbar_lock:
-            bar.reset(total=designs.shape[1] + 1)
-            bar.n = 5
-            bar.set_description(f"thread {worker_id} | r={r}")
-            bar.refresh()
-
-        for ns in range(5, designs.shape[1] + 1):
-            d = designs[r, :ns, :]
-            maxpros[r, ns] = maxPro_np(d)
-            maxprosL[r, ns] = maxPro_np(latinize(d))
-
-            with pbar_lock:
-                bar.update(1)
-
-        task_queue.task_done()
-
-    with pbar_lock:
-        bar.close()
-
-
-n_threads = designs.shape[0]
-
-maxpros = -np.ones((designs.shape[0], designs.shape[1] + 1))
-maxprosL = -np.ones((designs.shape[0], designs.shape[1] + 1))
-
-task_queue = Queue()
-pbar_lock = threading.Lock()
-
-for r in range(designs.shape[0]):
-    task_queue.put(r)
-
-for _ in range(n_threads):
-    task_queue.put(None)
-
-threads = []
-for worker_id in range(n_threads):
-    t = threading.Thread(
-        target=worker,
-        args=(worker_id, task_queue, designs, maxpros, maxprosL, pbar_lock),
-        daemon=True,
-    )
-    t.start()
-    threads.append(t)
-
-task_queue.join()
-
-for t in threads:
-    t.join()
-
-# %%
-maxpros.shape, maxprosL.shape
-
-# %%
 # Parallel version with selection of some sample sizes only
 
 import numpy as np
@@ -662,6 +592,9 @@ for r in range(designs.shape[0]):
 plt.legend()
 plt.show()
 
+# %%
+maxpros.shape, maxprosL.shape
+
 # %% [raw]
 # maxpros = -np.ones([designs.shape[0], designs.shape[1]+1])
 # maxprosL = -np.ones([designs.shape[0], designs.shape[1]+1])
@@ -677,27 +610,20 @@ ns = maxpros.shape[1]
 ns
 
 # %%
-maxpros2 = maxpros / (np.arange(ns)[np.newaxis, :] ** 3.15)
-maxpros2L = maxprosL / (np.arange(ns)[np.newaxis, :] ** 3.15)
-maxpros_SA2 = maxpros_SA / (maxpros_SA_x ** 3.15)
+exponent = 3.15 #2D
+#exponent = 3.3 #3D
+
+maxpros2 = maxpros / (sample_sizes ** exponent)
+maxpros2L = maxprosL / (sample_sizes ** exponent)
+maxpros_SA2 = maxpros_SA / (maxpros_SA_x ** exponent)
 
 # %%
 fig, ax = plt.subplots(1, 1, figsize=(8, 8))
 ax0 = ax
 
 for r in range(designs.shape[0]):
-    ax0.plot(
-        np.arange(designs.shape[1]+1 - 5) + 5,
-        maxpros2[r, 5:],
-        c='r',
-        label='additive' if r == 0 else None
-    )
-    ax0.plot(
-        np.arange(designs.shape[1]+1 - 5) + 5,
-        maxpros2L[r, 5:],
-        c='k',
-        label='additive latinized' if r == 0 else None
-    )
+    ax0.plot(sample_sizes, maxpros2[r] , c='r', label='additive' if r == 0 else None )
+    ax0.plot(sample_sizes, maxpros2L[r], c='k', label='additive latinized' if r == 0 else None)
 
 for r in range(401):
     ax0.plot(maxpros_SA_x, maxpros_SA2[r], c="b",
